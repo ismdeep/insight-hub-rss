@@ -1,0 +1,8 @@
+# JetBrains
+/.idea/
+
+# Test Data
+/data.db
+
+# vendor
+/vendor/
