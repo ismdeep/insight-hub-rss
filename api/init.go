@@ -16,6 +16,9 @@ import (
 //go:embed index.txt
 var indexText string
 
+//go:embed favicon.png
+var favicon []byte
+
 var eng *gin.Engine
 
 func init() {
@@ -31,6 +34,12 @@ func init() {
 			content.WriteString(fmt.Sprintf("https://insight-hub.ismdeep.com/%v/rss for %v RSS Feed.\n", source, source))
 		}
 		c.String(http.StatusOK, indexText+content.String())
+	})
+
+	eng.GET("/favicon.ico", func(c *gin.Context) {
+		c.Writer.Header().Set("Content-Type", "image/png")
+		c.Writer.Header().Set("Expires", time.Now().Add(24*time.Hour).UTC().Format(http.TimeFormat))
+		_, _ = c.Writer.Write(favicon)
 	})
 
 	eng.GET("/rss", func(c *gin.Context) {
