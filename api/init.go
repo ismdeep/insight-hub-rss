@@ -41,7 +41,7 @@ func init() {
 		}
 
 		feed := &feeds.Feed{
-			Title:       "InsightHub RSS Feed",
+			Title:       fmt.Sprintf("All - InsightHub RSS Feed"),
 			Link:        &feeds.Link{Href: "https://insight-hub.github.io/"},
 			Description: "A collection of RSS feeds.",
 			Author:      &feeds.Author{Name: "L. Jiang", Email: "l.jiang.1024@gmail.com"},
@@ -82,7 +82,7 @@ func init() {
 		}
 
 		feed := &feeds.Feed{
-			Title:       "InsightHub RSS Feed",
+			Title:       fmt.Sprintf("%v - InsightHub RSS Feed", source),
 			Link:        &feeds.Link{Href: "https://insight-hub.github.io/"},
 			Description: "A collection of RSS feeds.",
 			Author:      &feeds.Author{Name: "L. Jiang", Email: "l.jiang.1024@gmail.com"},
