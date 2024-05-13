@@ -56,3 +56,19 @@ func RecordRecentList() ([]Record, error) {
 	}
 	return records, nil
 }
+
+func RecordRecentListBySource(source string) ([]Record, error) {
+	var records []Record
+	if err := db.Where("source = ?", source).Order("published_at desc").Limit(50).Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func RecordSources() ([]string, error) {
+	var sources []string
+	if err := db.Model(&Record{}).Select("distinct source").Find(&sources).Error; err != nil {
+		return nil, err
+	}
+	return sources, nil
+}

@@ -1,3 +1,6 @@
 # Insight Hub
 
-https://insight-hub.ismdeep.com/rss for RSS Feed.
+https://insight-hub.ismdeep.com/rss for ALL sources RSS Feed.
+
+--------------------
+
