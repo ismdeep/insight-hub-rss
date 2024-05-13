@@ -1,12 +1,5 @@
 package store
 
-import (
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-)
-
-var db *gorm.DB
-
 type Record struct {
 	ID          string `gorm:"type:varchar(255);primaryKey"`
 	Source      string `gorm:"type:text"`
@@ -15,18 +8,6 @@ type Record struct {
 	Link        string `gorm:"type:text"`
 	Content     string `gorm:"type:text"`
 	PublishedAt int64  `gorm:"type:bigint"`
-}
-
-func init() {
-	tmpDB, err := gorm.Open(sqlite.Open("data.db"))
-	if err != nil {
-		panic(err)
-	}
-
-	db = tmpDB
-	if err := db.AutoMigrate(&Record{}); err != nil {
-		panic(err)
-	}
 }
 
 func RecordExists(id string) (bool, error) {

@@ -50,8 +50,8 @@ func init() {
 		}
 
 		feed := &feeds.Feed{
-			Title:       fmt.Sprintf("All - InsightHub RSS Feed"),
-			Link:        &feeds.Link{Href: "https://insight-hub.github.io/"},
+			Title:       "All - InsightHub RSS Feed",
+			Link:        &feeds.Link{Href: "https://insight-hub.ismdeep.com/rss"},
 			Description: "A collection of RSS feeds.",
 			Author:      &feeds.Author{Name: "L. Jiang", Email: "l.jiang.1024@gmail.com"},
 			Created:     time.Now(),
@@ -84,6 +84,13 @@ func init() {
 
 	eng.GET("/:source/rss", func(c *gin.Context) {
 		source := c.Param("source")
+
+		metaInfo, err := store.MetaInfo(source)
+		if err != nil {
+			c.String(http.StatusInternalServerError, err.Error())
+			return
+		}
+
 		lst, err := store.RecordRecentListBySource(source)
 		if err != nil {
 			c.String(http.StatusInternalServerError, err.Error())
@@ -91,8 +98,8 @@ func init() {
 		}
 
 		feed := &feeds.Feed{
-			Title:       fmt.Sprintf("%v - InsightHub RSS Feed", source),
-			Link:        &feeds.Link{Href: "https://insight-hub.github.io/"},
+			Title:       fmt.Sprintf("%v - InsightHub", metaInfo.Name),
+			Link:        &feeds.Link{Href: fmt.Sprintf("https://insight-hub.ismdeep.com/%v/rss", source)},
 			Description: "A collection of RSS feeds.",
 			Author:      &feeds.Author{Name: "L. Jiang", Email: "l.jiang.1024@gmail.com"},
 			Created:     time.Now(),

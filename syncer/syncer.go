@@ -21,51 +21,111 @@ import (
 )
 
 type Worker struct {
-	link              string
-	lastContentLength string
-	lastEtag          string
+	metaLink                   string
+	metaInfo                   MetaInfo
+	indexLink                  string
+	contentLinkPrefix          string
+	indexLinkLastContentLength string
+	indexLinkLastEtag          string
 }
 
-func NewWorker(link string) *Worker {
-	return &Worker{
-		link: link,
+func NewWorker(metaLink string) (*Worker, error) {
+	metaInfo, err := DownloadMeta(metaLink)
+	if err != nil {
+		log.WithContext(context.Background()).Error("failed to download meta info", zap.Error(err))
+		return nil, err
 	}
+
+	indexPrefix := metaLink[:strings.LastIndex(metaLink, "/")]
+
+	if err := store.MetaSave(&store.Meta{
+		Source:   metaInfo.Source,
+		Name:     metaInfo.Name,
+		HomePage: metaInfo.HomePage,
+	}); err != nil {
+		log.WithContext(context.Background()).Error("failed to save meta info", zap.Error(err))
+		return nil, err
+	}
+
+	return &Worker{
+		metaLink:                   metaLink,
+		metaInfo:                   *metaInfo,
+		indexLink:                  fmt.Sprintf("%v/%v.txt", indexPrefix, metaInfo.Source),
+		contentLinkPrefix:          fmt.Sprintf("%v/%v.d", indexPrefix, metaInfo.Source),
+		indexLinkLastContentLength: "",
+		indexLinkLastEtag:          "",
+	}, nil
 }
 
 func (receiver *Worker) work(ctx context.Context) {
 	for {
-		log.WithContext(ctx).Info("start", zap.String("link", receiver.link))
+		log.WithContext(ctx).Info("start", zap.String("link", receiver.indexLink))
 		if err := receiver.check(); err != nil {
-			log.WithContext(ctx).Info("start", zap.String("failed", receiver.link))
+			log.WithContext(ctx).Info("start", zap.String("failed", receiver.indexLink))
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		log.WithContext(ctx).Info("completed", zap.String("link", receiver.link))
+		log.WithContext(ctx).Info("completed", zap.String("link", receiver.indexLink))
 		time.Sleep(10 * time.Minute)
 	}
 }
 
-func (receiver *Worker) DownloadByID(id string, source string, contentLink string) error {
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(contentLink)
+type MetaInfo struct {
+	Source   string `json:"source"`
+	HomePage string `json:"home_page"`
+	Name     string `json:"name"`
+}
+
+func DownloadMeta(metaLink string) (*MetaInfo, error) {
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get(metaLink)
 	if err != nil {
-		return fmt.Errorf("failed to download content: %v\n", err)
+		return nil, fmt.Errorf("failed to download meta file: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.WithContext(context.Background()).Warn("failed to close response body", zap.Error(err))
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download meta file, status: %s", resp.Status)
 	}
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read content: %v\n", err)
+		return nil, fmt.Errorf("failed to download meta file: %w", err)
+	}
+
+	var metaInfo MetaInfo
+	if err := json.Unmarshal(content, &metaInfo); err != nil {
+		return nil, fmt.Errorf("failed to download meta file: %w", err)
+	}
+
+	return &metaInfo, nil
+}
+
+func (receiver *Worker) DownloadContent(id string) error {
+	contentLink := fmt.Sprintf("%v/%v.json", receiver.contentLinkPrefix, id)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(contentLink)
+	if err != nil {
+		return fmt.Errorf("failed to download content: %v", err)
+	}
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %v", err)
 	}
 
 	var r core.Record
 	if err := json.Unmarshal(content, &r); err != nil {
-		return fmt.Errorf("failed to unmarshal content: %v\n", err)
+		return fmt.Errorf("failed to unmarshal content: %v", err)
 	}
 
 	if r.ID != id {
 		return fmt.Errorf("content link check failed: id is not correct")
 	}
 
-	if r.Source != source {
+	if r.Source != receiver.metaInfo.Source {
 		return fmt.Errorf("content link check failed: source is not correct")
 	}
 
@@ -85,23 +145,23 @@ func (receiver *Worker) DownloadByID(id string, source string, contentLink strin
 }
 
 func (receiver *Worker) check() error {
-	headResp, err := (&http.Client{Timeout: 30 * time.Second}).Head(receiver.link)
+	headResp, err := (&http.Client{Timeout: 30 * time.Second}).Head(receiver.indexLink)
 	if err != nil {
 		return err
 	}
 
 	if headResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to request via head method: %v [%v]", receiver.link, headResp.Status)
+		return fmt.Errorf("failed to request via head method: %v [%v]", receiver.indexLink, headResp.Status)
 	}
 
 	etag := headResp.Header.Get("Etag")
 	contentLength := headResp.Header.Get("Content-Length")
-	if receiver.lastEtag == etag && receiver.lastContentLength == contentLength {
+	if receiver.indexLinkLastEtag == etag && receiver.indexLinkLastContentLength == contentLength {
 		fmt.Printf("[INFO] skip to get content due etag and content-length not changed.")
 		return nil
 	}
 
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Get(receiver.link)
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Get(receiver.indexLink)
 	if err != nil {
 		return err
 	}
@@ -158,11 +218,7 @@ func (receiver *Worker) check() error {
 					continue
 				}
 
-				contentLink := fmt.Sprintf("%v/%v.d/%v.json",
-					receiver.link[:strings.LastIndex(receiver.link, "/")],
-					source,
-					id)
-				if err := receiver.DownloadByID(id, source, contentLink); err != nil {
+				if err := receiver.DownloadContent(id); err != nil {
 					log.WithContext(ctx).Error("failed to download by id", zap.Error(err))
 					errChan <- fmt.Errorf("failed to download by id: %v", err.Error())
 					continue
@@ -192,8 +248,8 @@ func (receiver *Worker) check() error {
 	}
 
 	// update etag and content-length
-	receiver.lastEtag = etag
-	receiver.lastContentLength = contentLength
+	receiver.indexLinkLastEtag = etag
+	receiver.indexLinkLastContentLength = contentLength
 	return nil
 }
 
@@ -203,7 +259,12 @@ func Run() {
 		wg.Add(1)
 		go func(link string) {
 			defer wg.Done()
-			NewWorker(link).work(log.NewTraceContext(uuid.NewString()))
+			w, err := NewWorker(link)
+			if err != nil {
+				log.WithContext(context.Background()).Fatal("failed to create worker", zap.String("link", link), zap.Error(err))
+				return
+			}
+			w.work(log.NewTraceContext(uuid.NewString()))
 		}(link)
 	}
 	wg.Wait()
